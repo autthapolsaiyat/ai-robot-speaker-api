@@ -49,3 +49,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Submodules / Cloned repos
+Wav2Lip/
+ai-robot-speaker-api/
