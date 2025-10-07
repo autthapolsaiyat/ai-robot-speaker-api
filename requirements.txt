@@ -1,0 +1,53 @@
+# FastAPI & Web Server
+fastapi==0.114.2
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-multipart==0.0.9
+jinja2==3.1.4
+httpx==0.27.2
+
+# AI / Deep Learning
+torch>=2.2.0
+torchvision>=0.17.0
+torchaudio>=2.2.0
+
+# TTS (Coqui) - ใช้ version ใหม่กว่า
+TTS>=0.22.0
+
+# Computer Vision & Media Processing
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.22.0,<2.0.0
+Pillow>=10.0.0
+moviepy>=1.0.3
+imageio>=2.31.0
+imageio-ffmpeg>=0.5.0
+
+# Speech Recognition
+faster-whisper>=1.0.0
+openai-whisper>=20231117
+
+# Stable Diffusion (Face Generation)
+diffusers>=0.30.0
+transformers>=4.44.0
+accelerate>=0.33.0
+safetensors>=0.4.5
+
+# Face Analysis (optional)
+insightface>=0.7.3
+onnxruntime-gpu>=1.19.0
+
+# Utilities
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+requests>=2.31.0
+tqdm>=4.66.0
+scipy>=1.13.0
+
+# Development & Testing (optional)
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+
+# Monitoring (optional)
+prometheus-client>=0.20.0
+psutil>=6.0.0

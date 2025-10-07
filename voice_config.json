@@ -1,0 +1,8 @@
+{
+  "default": {
+    "model": "tts_models/en/ljspeech/vits",
+    "speaker": null,
+    "speed": 1.0,
+    "pitch": 0.0
+  }
+}

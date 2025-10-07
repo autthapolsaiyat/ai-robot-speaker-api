@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Robot Speaker API - Test Interface</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .content {
+            padding: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus,
+        textarea:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: inherit;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        button {
+            flex: 1;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .status-box {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            display: none;
+        }
+        .status-box.show {
+            display: block;
+        }
+        .status-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .status-content {
+            color: #666;
+            line-height: 1.6;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            width: 0%;
+        }
+        .result-video {
+            margin-top: 20px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .result-video video {
+            width: 100%;
+            max-height: 500px;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .config-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        .config-info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .example-texts {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .example-link {
+            color: #667eea;
+            cursor: pointer;
+            text-decoration: underline;
+            margin-right: 15px;
+        }
+        .example-link:hover {
+            color: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI Robot Speaker API</h1>
+            <p>Text-to-Speech with Lip-sync Video Generation</p>
+        </div>
+        
+        <div class="content">
+            <div class="config-info">
+                <strong>📡 API Endpoint:</strong>
+                <input type="text" id="apiEndpoint" value="http://192.168.1.59:4187" style="margin-top: 5px;">
+            </div>
+
+            <div id="alertContainer"></div>
+
+            <form id="speakForm">
+                <div class="form-group">
+                    <label for="textInput">📝 Text to Speak:</label>
+                    <textarea id="textInput" placeholder="Enter text here... (max 10,000 characters)" required></textarea>
+                    <div class="example-texts">
+                        <strong>ตัวอย่าง:</strong>
+                        <span class="example-link" onclick="setExampleText('en')">English</span>
+                        <span class="example-link" onclick="setExampleText('th')">ไทย</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="langSelect">🌐 Language:</label>
+                    <select id="langSelect" required>
+                        <option value="en">English</option>
+                        <option value="th">Thai (ไทย)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="voiceSelect">🎤 Voice:</label>
+                    <select id="voiceSelect" required>
+                        <option value="default">Default</option>
+                        <option value="thai_male">Thai Male (เสียงผู้ชาย)</option>
+                        <option value="thai_female">Thai Female (เสียงผู้หญิง)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="modeSelect">🎬 Output Mode:</label>
+                    <select id="modeSelect" required>
+                        <option value="robot_only">Robot Only (หน้าหุ่นยนต์อย่างเดียว)</option>
+                        <option value="split_screen">Split Screen (แยกหน้าจอ)</option>
+                    </select>
+                </div>
+
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">🚀 Generate Video</button>
+                    <button type="button" class="btn-secondary" onclick="checkHealth()">💚 Check Server Health</button>
+                </div>
+            </form>
+
+            <div id="statusBox" class="status-box">
+                <div class="status-title" id="statusTitle">Processing...</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="status-content" id="statusContent"></div>
+                <div class="result-video" id="resultVideo"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let pollInterval = null;
+
+        const examples = {
+            en: "Hello! I am an AI robot speaker. I can convert text to speech and generate synchronized lip movements. This is a demonstration of the text-to-speech system with realistic lip-sync technology.",
+            th: "สวัสดีครับ ผมเป็นหุ่นยนต์พูดได้ด้วย AI ผมสามารถแปลงข้อความเป็นเสียงพูด และสร้างการเคลื่อนไหวของริมฝีปากให้ตรงกับเสียง นี่คือการสาธิตระบบแปลงข้อความเป็นเสียงพูด"
+        };
+
+        function setExampleText(lang) {
+            document.getElementById('textInput').value = examples[lang];
+            document.getElementById('langSelect').value = lang;
+        }
+
+        function getApiUrl() {
+            return document.getElementById('apiEndpoint').value.trim();
+        }
+
+        function showAlert(message, type = 'info') {
+            const alertContainer = document.getElementById('alertContainer');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alertDiv);
+            
+            setTimeout(() => {
+                alertDiv.style.opacity = '0';
+                alertDiv.style.transition = 'opacity 0.5s';
+                setTimeout(() => alertDiv.remove(), 500);
+            }, 5000);
+        }
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${getApiUrl()}/health`);
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    showAlert(`✅ Server is healthy! CUDA available: ${data.cuda_available ? 'Yes' : 'No'}`, 'success');
+                } else {
+                    showAlert('⚠️ Server is running but may have issues', 'error');
+                }
+            } catch (error) {
+                showAlert(`❌ Cannot connect to server: ${error.message}`, 'error');
+            }
+        }
+
+        document.getElementById('speakForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const text = document.getElementById('textInput').value.trim();
+            const lang = document.getElementById('langSelect').value;
+            const voice = document.getElementById('voiceSelect').value;
+            const mode = document.getElementById('modeSelect').value;
+
+            if (!text) {
+                showAlert('กรุณาใส่ข้อความ', 'error');
+                return;
+            }
+
+            try {
+                // Show status box
+                const statusBox = document.getElementById('statusBox');
+                statusBox.classList.add('show');
+                document.getElementById('statusTitle').textContent = '🔄 Submitting job...';
+                document.getElementById('statusContent').textContent = 'กำลังส่งงานไปยังเซิร์ฟเวอร์...';
+                document.getElementById('progressFill').style.width = '10%';
+                document.getElementById('resultVideo').innerHTML = '';
+
+                // Submit job
+                const response = await fetch(`${getApiUrl()}/api/v1/speak`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        lang: lang,
+                        voice: voice,
+                        mode: mode
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to submit job');
+                }
+
+                const result = await response.json();
+                currentJobId = result.job_id;
+
+                showAlert(`✅ Job created: ${currentJobId}`, 'success');
+                document.getElementById('statusTitle').textContent = '⏳ Processing video...';
+                document.getElementById('statusContent').textContent = `Job ID: ${currentJobId}\nรอสักครู่...`;
+                document.getElementById('progressFill').style.width = '30%';
+
+                // Start polling for status
+                pollJobStatus();
+
+            } catch (error) {
+                showAlert(`❌ Error: ${error.message}`, 'error');
+                document.getElementById('statusBox').classList.remove('show');
+            }
+        });
+
+        async function pollJobStatus() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+            }
+
+            pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${getApiUrl()}/api/v1/jobs/${currentJobId}`);
+                    const status = await response.json();
+
+                    document.getElementById('statusContent').textContent = 
+                        `Job ID: ${currentJobId}\nStatus: ${status.status}\n${status.message || ''}`;
+
+                    // Update progress bar
+                    if (status.status === 'pending') {
+                        document.getElementById('progressFill').style.width = '40%';
+                    } else if (status.status === 'processing') {
+                        document.getElementById('progressFill').style.width = '70%';
+                    } else if (status.status === 'completed') {
+                        document.getElementById('progressFill').style.width = '100%';
+                        clearInterval(pollInterval);
+                        showCompletedVideo();
+                    } else if (status.status === 'failed') {
+                        document.getElementById('progressFill').style.width = '0%';
+                        clearInterval(pollInterval);
+                        showAlert(`❌ Job failed: ${status.message}`, 'error');
+                        document.getElementById('statusTitle').textContent = '❌ Failed';
+                    }
+
+                } catch (error) {
+                    console.error('Error polling status:', error);
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        function showCompletedVideo() {
+            document.getElementById('statusTitle').textContent = '✅ Video Ready!';
+            document.getElementById('statusContent').textContent = `Job ID: ${currentJobId}\nสำเร็จแล้ว! กำลังโหลดวิดีโอ...`;
+            
+            const videoContainer = document.getElementById('resultVideo');
+            const videoUrl = `${getApiUrl()}/api/v1/jobs/${currentJobId}/result`;
+            
+            videoContainer.innerHTML = `
+                <video controls autoplay>
+                    <source src="${videoUrl}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <div style="margin-top: 10px; text-align: center;">
+                    <a href="${videoUrl}" download="robot_video.mp4" style="color: #667eea; text-decoration: none; font-weight: 600;">
+                        ⬇️ Download Video
+                    </a>
+                </div>
+            `;
+
+            showAlert('🎉 Video generated successfully!', 'success');
+        }
+
+        // Check server health on load
+        window.addEventListener('load', () => {
+            checkHealth();
+        });
+    </script>
+</body>
+</html>

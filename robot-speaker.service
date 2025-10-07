@@ -1,0 +1,33 @@
+[Unit]
+Description=AI Robot Speaker API Service
+After=network.target
+
+[Service]
+Type=simple
+User=your_username
+Group=your_username
+WorkingDirectory=/path/to/ai-robot-speaker-api
+Environment="PATH=/path/to/ai-robot-speaker-api/.venv/bin:/usr/bin"
+ExecStart=/path/to/ai-robot-speaker-api/.venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 4187
+
+# Restart configuration
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits
+LimitNOFILE=65536
+MemoryLimit=8G
+
+# Logging
+StandardOutput=append:/var/log/robot-speaker/access.log
+StandardError=append:/var/log/robot-speaker/error.log
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/path/to/ai-robot-speaker-api/out /path/to/ai-robot-speaker-api/logs
+
+[Install]
+WantedBy=multi-user.target

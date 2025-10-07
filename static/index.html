@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Robot Speaker API</title>
+    <style>
+        body { font-family: Arial; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 20px; padding: 30px; }
+        h1 { color: #667eea; text-align: center; }
+        .robot-preview { text-align: center; margin: 20px 0; }
+        .robot-preview img { max-width: 300px; border-radius: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        input, textarea, select, button { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 16px; }
+        button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; cursor: pointer; font-weight: 600; }
+        button:hover { opacity: 0.9; }
+        .status { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; display: none; }
+        .status.show { display: block; }
+        .alert { padding: 15px; margin: 10px 0; border-radius: 8px; }
+        .alert-success { background: #d4edda; color: #155724; }
+        .alert-error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 AI Robot Speaker API</h1>
+        
+        <div class="robot-preview">
+            <img src="/assets/robot_face.jpg" alt="Robot" onerror="this.style.display='none'">
+        </div>
+
+        <div id="alert"></div>
+
+        <form id="form">
+            <textarea id="text" placeholder="Enter text..." required></textarea>
+            
+            <select id="lang">
+                <option value="en">English</option>
+                <option value="th">Thai</option>
+            </select>
+            
+            <select id="voice">
+                <option value="default">Default Voice</option>
+                <option value="thai_male">Thai Male</option>
+                <option value="thai_female">Thai Female</option>
+            </select>
+            
+            <button type="submit">🚀 Generate Video</button>
+            <button type="button" onclick="checkHealth()">💚 Check Health</button>
+        </form>
+
+        <div id="status" class="status">
+            <h3 id="statusTitle">Processing...</h3>
+            <p id="statusText"></p>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://192.168.1.59:4187';
+        let jobId = null;
+        let polling = null;
+
+        async function checkHealth() {
+            try {
+                const res = await fetch(`${API}/health`);
+                const data = await res.json();
+                showAlert(`✅ Server OK! CUDA: ${data.checks.cuda_available}`, 'success');
+            } catch (e) {
+                showAlert('❌ Cannot connect: ' + e.message, 'error');
+            }
+        }
+
+        function showAlert(msg, type) {
+            const alert = document.getElementById('alert');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = msg;
+            setTimeout(() => alert.className = 'alert', 3000);
+        }
+
+        document.getElementById('form').onsubmit = async (e) => {
+            e.preventDefault();
+            
+            const text = document.getElementById('text').value;
+            const lang = document.getElementById('lang').value;
+            const voice = document.getElementById('voice').value;
+
+            try {
+                document.getElementById('status').classList.add('show');
+                document.getElementById('statusText').textContent = 'Submitting...';
+                
+                const res = await fetch(`${API}/api/v1/speak`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text, lang, voice, mode: 'robot_only' })
+                });
+
+                const data = await res.json();
+                jobId = data.job_id;
+                showAlert('✅ Job created: ' + jobId, 'success');
+                
+                pollStatus();
+            } catch (e) {
+                showAlert('❌ Error: ' + e.message, 'error');
+            }
+        };
+
+        function pollStatus() {
+            if (polling) clearInterval(polling);
+            
+            polling = setInterval(async () => {
+                try {
+                    const res = await fetch(`${API}/api/v1/jobs/${jobId}`);
+                    const data = await res.json();
+                    
+                    document.getElementById('statusText').textContent = 
+                        `Status: ${data.status} (${data.progress}%)`;
+
+                    if (data.status === 'completed') {
+                        clearInterval(polling);
+                        document.getElementById('statusTitle').textContent = '✅ Done!';
+                        document.getElementById('result').innerHTML = 
+                            `<video controls style="width:100%; max-height:500px; margin-top:15px;">
+                                <source src="${API}/api/v1/jobs/${jobId}/result" type="video/mp4">
+                            </video>`;
+                        showAlert('🎉 Video ready!', 'success');
+                    } else if (data.status === 'failed') {
+                        clearInterval(polling);
+                        showAlert('❌ Failed: ' + data.error, 'error');
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }, 2000);
+        }
+
+        window.onload = checkHealth;
+    </script>
+</body>
+</html>

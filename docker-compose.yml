@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  robot-speaker-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: robot-speaker-api
+    ports:
+      - "4187:4187"
+    volumes:
+      # Mount models directory (pre-download models here)
+      - ./models:/app/models
+      # Mount assets
+      - ./assets:/app/assets
+      # Mount output directory
+      - ./out:/app/out
+      # Mount logs
+      - ./logs:/app/logs
+      # Configuration files
+      - ./.env:/app/.env:ro
+      - ./voice_config.json:/app/voice_config.json:ro
+      - ./face_presets.json:/app/face_presets.json:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4187
+      - DATA_DIR=/app/out
+      - MODELS_DIR=/app/models
+      - ASSETS_DIR=/app/assets
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4187/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Redis for advanced queue management
+  redis:
+    image: redis:7-alpine
+    container_name: robot-speaker-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Optional: Monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: robot-speaker-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    restart: unless-stopped
+    profiles: ["monitoring"]
+
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: robot-speaker-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    restart: unless-stopped
+    profiles: ["monitoring"]
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  default:
+    name: robot-speaker-network
