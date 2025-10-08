@@ -2,6 +2,7 @@
 AI Robot Speaker API - Production Ready
 Full-featured TTS + Lip-sync + Face Generation API
 Security-hardened, monitored, production-ready
+WITH REAL-TIME WEBSOCKET PROGRESS
 """
 
 import os
@@ -12,15 +13,16 @@ import shutil
 import subprocess
 import logging
 import time
+import asyncio
 import resource
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, List, Literal, Dict, Any
+from typing import Optional, List, Literal, Dict, Any, Set
 from contextlib import asynccontextmanager
 
 import torch
 import numpy as np
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -35,7 +37,7 @@ load_dotenv()
 # ============================================================================
 
 HOST = os.getenv("HOST", "0.0.0.0")
-PORT = int(os.getenv("PORT", 4187))
+PORT = int(os.getenv("PORT", 4188))
 DATA_DIR = Path(os.getenv("DATA_DIR", "out"))
 ASSETS_DIR = Path(os.getenv("ASSETS_DIR", "assets"))
 MODELS_DIR = Path(os.getenv("MODELS_DIR", "models"))
@@ -152,12 +154,54 @@ class SecurityValidator:
 security = SecurityValidator()
 
 # ============================================================================
+# WEBSOCKET CONNECTION MANAGER
+# ============================================================================
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
+        self.lock = asyncio.Lock()
+    
+    async def connect(self, job_id: str, websocket: WebSocket):
+        await websocket.accept()
+        async with self.lock:
+            if job_id not in self.active_connections:
+                self.active_connections[job_id] = set()
+            self.active_connections[job_id].add(websocket)
+        logger.info(f"WebSocket connected for job {job_id}")
+    
+    async def disconnect(self, job_id: str, websocket: WebSocket):
+        async with self.lock:
+            if job_id in self.active_connections:
+                self.active_connections[job_id].discard(websocket)
+                if not self.active_connections[job_id]:
+                    del self.active_connections[job_id]
+        logger.info(f"WebSocket disconnected for job {job_id}")
+    
+    async def send_message(self, job_id: str, message: dict):
+        if job_id in self.active_connections:
+            dead_connections = set()
+            for connection in self.active_connections[job_id]:
+                try:
+                    await connection.send_json(message)
+                except Exception as e:
+                    logger.error(f"Failed to send WebSocket message: {e}")
+                    dead_connections.add(connection)
+            
+            async with self.lock:
+                for conn in dead_connections:
+                    self.active_connections[job_id].discard(conn)
+
+manager = ConnectionManager()
+
+# ============================================================================
 # JOB MANAGEMENT
 # ============================================================================
 
 class JobState:
-    def __init__(self, job_dir: Path):
+    def __init__(self, job_dir: Path, job_id: str = None):
         self.job_dir = job_dir
+        self.job_id = job_id
         self.state_file = job_dir / "state.json"
         self.job_dir.mkdir(parents=True, exist_ok=True)
     
@@ -168,6 +212,14 @@ class JobState:
         data.update(kwargs)
         data["updated_at"] = datetime.now().isoformat()
         self.state_file.write_text(json.dumps(data, indent=2))
+        
+        # Send WebSocket update
+        if self.job_id:
+            try:
+                loop = asyncio.get_event_loop()
+                loop.create_task(manager.send_message(self.job_id, data))
+            except Exception as e:
+                logger.debug(f"Could not send WebSocket update: {e}")
     
     def step(self, step_name: str, **extra):
         data = json.loads(self.state_file.read_text()) if self.state_file.exists() else {}
@@ -180,6 +232,18 @@ class JobState:
         data["steps"] = steps
         self.state_file.write_text(json.dumps(data, indent=2))
         logger.info(f"Step: {step_name} {extra}")
+        
+        # Send WebSocket step update
+        if self.job_id:
+            try:
+                loop = asyncio.get_event_loop()
+                loop.create_task(manager.send_message(self.job_id, {
+                    "step": step_name,
+                    "details": extra,
+                    "timestamp": datetime.now().isoformat()
+                }))
+            except Exception as e:
+                logger.debug(f"Could not send WebSocket step: {e}")
 
 class JobManager:
     @staticmethod
@@ -321,25 +385,51 @@ FACE_PRESETS = load_json_config("face_presets.json", {
 def synthesize_tts(text: str, lang: str, out_wav: Path, model: str = None, 
                    speaker: str = None, speed: float = 1.0, pitch: float = 0.0):
     """Generate speech from text"""
-    tts = get_tts_model()
     
-    # Try with language parameter first (multi-lingual models)
-    try:
-        tts.tts_to_file(
-            text=text,
-            file_path=str(out_wav),
-            speaker=speaker,
-            language=lang
-        )
-    except (ValueError, TypeError):
-        # Fall back for single-language models
-        tts.tts_to_file(
-            text=text,
-            file_path=str(out_wav),
-            speaker=speaker
-        )
+    # ใช้ gTTS สำหรับภาษาไทย
+    if lang == "th":
+        logger.info(f"Using gTTS for Thai language")
+        from gtts import gTTS
+        import subprocess
+        
+        # สร้างไฟล์ MP3 ชั่วคราว
+        temp_mp3 = out_wav.parent / f"{out_wav.stem}_temp.mp3"
+        
+        # สร้างเสียงด้วย gTTS
+        tts = gTTS(text, lang='th', slow=False)
+        tts.save(str(temp_mp3))
+        logger.info(f"gTTS MP3 created: {temp_mp3}")
+        
+        # แปลง MP3 -> WAV (22050 Hz, Mono) เพื่อใช้กับ Wav2Lip
+        subprocess.run([
+            'ffmpeg', '-y', '-i', str(temp_mp3),
+            '-ar', '22050', '-ac', '1',
+            str(out_wav)
+        ], check=True, capture_output=True)
+        
+        # ลบไฟล์ชั่วคราว
+        temp_mp3.unlink()
+        logger.info(f"Converted to WAV: {out_wav}")
+        
+    else:
+        # ใช้ TTS model เดิมสำหรับภาษาอังกฤษ
+        tts = get_tts_model()
+        
+        try:
+            tts.tts_to_file(
+                text=text,
+                file_path=str(out_wav),
+                speaker=speaker,
+                language=lang
+            )
+        except (ValueError, TypeError):
+            tts.tts_to_file(
+                text=text,
+                file_path=str(out_wav),
+                speaker=speaker
+            )
     
-    logger.info(f"TTS completed: {out_wav}")
+    logger.info(f"TTS completed: {out_wav}")    
 
 def lipsync(face_path: Path, audio_path: Path, out_video: Path, checkpoint: Path):
     """Generate lip-synced video using Wav2Lip"""
@@ -511,6 +601,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting AI Robot Speaker API...")
     logger.info(f"GPU available: {torch.cuda.is_available()}")
     logger.info(f"Data directory: {DATA_DIR.resolve()}")
+    logger.info(f"WebSocket support: ENABLED")
     
     # Cleanup old jobs on startup
     cleaned = job_manager.cleanup_old_jobs()
@@ -523,8 +614,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI Robot Speaker API",
-    description="Production-ready TTS + Lip-sync + Face Generation API",
-    version="2.0.0",
+    description="Production-ready TTS + Lip-sync + Face Generation API with Real-time WebSocket",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -551,6 +642,23 @@ async def log_requests(request: Request, call_next):
     return response
 
 # ============================================================================
+# WEBSOCKET ENDPOINT
+# ============================================================================
+
+@app.websocket("/ws/{job_id}")
+async def websocket_endpoint(websocket: WebSocket, job_id: str):
+    """Real-time job progress updates via WebSocket"""
+    await manager.connect(job_id, websocket)
+    try:
+        while True:
+            # Keep connection alive and handle heartbeat
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        await manager.disconnect(job_id, websocket)
+
+# ============================================================================
 # ENDPOINTS
 # ============================================================================
 
@@ -562,11 +670,13 @@ def root():
         return FileResponse(str(index_file))
     return {
         "service": "AI Robot Speaker API",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "status": "running",
+        "features": ["TTS", "Lip-sync", "Face Generation", "Real-time WebSocket"],
         "docs": "/docs",
         "web_ui": "/static/index.html"
     }
+
 @app.get("/health", response_model=HealthCheck, tags=["General"])
 def health_check():
     """System health check"""
@@ -575,10 +685,12 @@ def health_check():
     checks = {
         "gpu_available": torch.cuda.is_available(),
         "cuda_available": torch.cuda.is_available(),
+        "websocket_enabled": True,
         "wav2lip_model": (MODELS_DIR / "wav2lip_gan.pth").exists(),
         "sdxl_model": Path(SDXL_BASE).exists(),
         "disk_free_gb": round(disk_usage.free / (1024**3), 2),
-        "disk_used_percent": round(disk_usage.used / disk_usage.total * 100, 1)
+        "disk_used_percent": round(disk_usage.used / disk_usage.total * 100, 1),
+        "active_websockets": sum(len(conns) for conns in manager.active_connections.values())
     }
     
     status = "ok" if all([
@@ -609,8 +721,8 @@ def generate_face(req: FaceGenIn):
     job_dir = DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     
-    js = JobState(job_dir)
-    js.update(status="processing", progress=0)
+    js = JobState(job_dir, job_id)
+    js.update(status="processing", progress=0, message="Starting face generation...")
     audit.log(job_id, "face_generation_start", preset=req.preset, has_custom_prompt=bool(req.prompt))
     
     try:
@@ -635,6 +747,7 @@ def generate_face(req: FaceGenIn):
         
         security.validate_face_prompt(prompt)
         
+        js.update(progress=20, message="Loading face generator...")
         out_png = job_dir / "robot_face.png"
         gen = get_face_gen()
         
@@ -642,6 +755,7 @@ def generate_face(req: FaceGenIn):
         if seed is not None:
             g = torch.Generator(gen.device).manual_seed(seed)
         
+        js.update(progress=30, message="Generating base image...")
         img = gen.base(
             prompt=prompt,
             negative_prompt=negative,
@@ -653,18 +767,20 @@ def generate_face(req: FaceGenIn):
         ).images[0]
         
         if gen.refiner:
+            js.update(progress=70, message="Refining image...")
             img = gen.refiner(image=img, prompt=prompt, strength=0.25, num_inference_steps=15).images[0]
         
+        js.update(progress=90, message="Saving image...")
         img.save(out_png)
         
-        js.update(status="done", progress=100, files={"image": str(out_png)})
+        js.update(status="done", progress=100, files={"image": str(out_png)}, message="Face generation complete!")
         audit.log(job_id, "face_generation_complete")
         
         return JobOut(job_id=job_id, status="done", progress=100, files={"image": str(out_png)})
     
     except Exception as e:
         logger.error(f"Face generation failed: {e}", exc_info=True)
-        js.update(status="error", progress=100, error=str(e))
+        js.update(status="error", progress=100, error=str(e), message=f"Error: {str(e)}")
         audit.log(job_id, "face_generation_error", error=str(e))
         raise HTTPException(500, f"Face generation failed: {e}")
 
@@ -675,23 +791,26 @@ def speak(req: SpeakIn, background_tasks: BackgroundTasks):
     job_dir = DATA_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     
-    js = JobState(job_dir)
-    js.update(status="queued", progress=0, request=req.dict())
+    js = JobState(job_dir, job_id)
+    js.update(status="queued", progress=0, request=req.dict(), message="Job queued")
     audit.log(job_id, "job_created", text_length=len(req.text), mode=req.mode, voice=req.voice or DEFAULT_VOICE)
     
     def worker():
         try:
-            js.update(status="processing", progress=5)
+            js.update(status="processing", progress=5, message="Starting job...")
             
             # 0) Determine face
+            js.update(progress=10, message="Loading face image...")
             if req.robot_face:
                 face = security.validate_path(req.robot_face, ASSETS_DIR)
             elif req.face_preset:
                 js.step("facegen:start", preset=req.face_preset)
+                js.update(message="Generating face from preset...")
                 face = ensure_face_from_preset(job_dir, req.face_preset)
                 js.update(progress=20)
             elif DEFAULT_FACE_PRESET:
                 js.step("facegen:start", preset=DEFAULT_FACE_PRESET)
+                js.update(message="Generating default face...")
                 face = ensure_face_from_preset(job_dir, DEFAULT_FACE_PRESET)
                 js.update(progress=20)
             else:
@@ -704,6 +823,7 @@ def speak(req: SpeakIn, background_tasks: BackgroundTasks):
             
             # 1) TTS
             js.step("tts:start")
+            js.update(progress=25, message="Generating speech audio...")
             voice_preset = VOICE_CONFIG.get(req.voice or DEFAULT_VOICE, VOICE_CONFIG["default"])
             synthesize_tts(
                 req.text, req.lang, out_wav,
@@ -713,26 +833,29 @@ def speak(req: SpeakIn, background_tasks: BackgroundTasks):
                 pitch=req.pitch if req.pitch != 0.0 else voice_preset.get("pitch", 0.0)
             )
             js.step("tts:done")
-            js.update(progress=40)
+            js.update(progress=50, message="Speech audio generated")
             
             # 2) Lip-sync
             js.step("lipsync:start")
+            js.update(progress=60, message="Creating lip-sync video...")
             lipsync(face, out_wav, robot_mp4, MODELS_DIR / "wav2lip_gan.pth")
             js.step("lipsync:done")
-            js.update(progress=70)
+            js.update(progress=85, message="Lip-sync completed")
             
             # 3) Final output
             if req.mode == "robot_only":
+                js.update(progress=95, message="Finalizing video...")
                 shutil.copy(robot_mp4, out_final)
                 js.update(status="completed", progress=100, files={"video": str(out_final)}, message="Video ready!")
             else:
                 # Generate subtitles
                 js.step("subtitles:start")
+                js.update(progress=88, message="Generating subtitles...")
                 make_subtitles(out_wav, job_dir, req.whisper_model or DEFAULT_WHISPER_MODEL)
-                js.update(progress=85)
                 
                 # Composite
                 js.step("composite:start")
+                js.update(progress=92, message="Creating split-screen video...")
                 teacher = security.validate_path(req.teacher_video, ASSETS_DIR) if req.teacher_video else DEFAULT_TEACHER_VIDEO
                 split_and_burn(robot_mp4, teacher, job_dir / "captions_en.srt", None, out_final)
                 js.update(status="completed", progress=100, files={"video": str(out_final)}, message="Video ready!")
@@ -746,6 +869,55 @@ def speak(req: SpeakIn, background_tasks: BackgroundTasks):
     
     background_tasks.add_task(worker)
     return JobOut(job_id=job_id, status="queued", progress=0)
+
+@app.get("/api/v1/jobs/list", tags=["Jobs"])
+def list_jobs(limit: int = 100, sort: str = "desc"):
+    """List all available jobs sorted by date"""
+    try:
+        jobs = []
+        
+        if not DATA_DIR.exists():
+            return {"jobs": []}
+        
+        for job_dir in DATA_DIR.iterdir():
+            if not job_dir.is_dir():
+                continue
+                
+            state_file = job_dir / "state.json"
+            if not state_file.exists():
+                continue
+            
+            try:
+                state_data = json.loads(state_file.read_text())
+                
+                video_file = None
+                for filename in ["final_split_subbed.mp4", "final.mp4", "robot_talk.mp4"]:
+                    potential_file = job_dir / filename
+                    if potential_file.exists():
+                        video_file = filename
+                        break
+                
+                if video_file and state_data.get("status") == "completed":
+                    jobs.append({
+                        "job_id": job_dir.name,
+                        "text": state_data.get("request", {}).get("text", "No text"),
+                        "lang": state_data.get("request", {}).get("lang", "unknown"),
+                        "voice": state_data.get("request", {}).get("voice", "default"),
+                        "created_at": state_data.get("updated_at", state_data.get("created_at", "")),
+                        "video_file": video_file
+                    })
+            except Exception as e:
+                logger.error(f"Failed to read job {job_dir.name}: {e}")
+                continue
+        
+        jobs.sort(key=lambda x: x["created_at"], reverse=(sort == "desc"))
+        jobs = jobs[:limit]
+        
+        return {"jobs": jobs, "count": len(jobs)}
+        
+    except Exception as e:
+        logger.error(f"Failed to list jobs: {e}")
+        raise HTTPException(500, f"Failed to list jobs: {e}")
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobOut, tags=["Jobs"])
 def get_job_status(job_id: str):

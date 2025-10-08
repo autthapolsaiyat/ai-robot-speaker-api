@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Robot Speaker - Player</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        /* Main Layout */
+        .app-container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            height: 100vh;
+            gap: 2px;
+            background: #00ff00;
+            padding: 2px;
+        }
+        
+        /* Left: Neural Network + Video */
+        .player-section {
+            background: #000;
+            position: relative;
+            overflow: hidden;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+        }
+        
+        .neural-canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #bgCanvas { z-index: 1; }
+        #compositeCanvas { z-index: 2; }
+        #videoPlayer { display: none; }
+        
+        /* Title Overlay */
+        .title-overlay {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+            text-align: center;
+        }
+        
+        .title-overlay h1 {
+            font-size: 0.1em;
+            color: #000000;
+            text-shadow: 0 0 20px rgba(0, 255, 0, 0.8);
+            margin-bottom: 5px;
+        }
+        
+        .title-overlay p {
+            color: #0f0;
+            font-size: 1em;
+        }
+        
+        /* Video Controls Overlay */
+        .video-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .control-btn {
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s;
+            min-width: 120px;
+        }
+        
+        .control-btn:hover:not(:disabled) {
+            background: #00ff00;
+            color: #000;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 255, 0, 0.6);
+        }
+        
+        .control-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        
+        /* Right Gallery */
+        .gallery-section {
+            background: #000;
+            border: 2px solid #00ff00;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .gallery-header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(0, 255, 0, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .gallery-header h2 {
+            color: #00ff00;
+            font-size: 1.5em;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+        }
+        
+        .refresh-btn {
+            background: rgba(0, 255, 0, 0.1);
+            border: 2px solid #00ff00;
+            color: #00ff00;
+            padding: 8px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .refresh-btn:hover {
+            background: #00ff00;
+            color: #000;
+        }
+        
+        .gallery-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .gallery-item {
+            background: rgba(0, 255, 0, 0.05);
+            border: 2px solid rgba(0, 255, 0, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .gallery-item:hover {
+            border-color: #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+            transform: translateX(-5px);
+        }
+        
+        .gallery-item video {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: #000;
+        }
+        
+        .gallery-item-info {
+            padding: 12px;
+        }
+        
+        .gallery-item-date {
+            color: #00aa00;
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .gallery-item-text {
+            color: #0f0;
+            font-size: 13px;
+            line-height: 1.4;
+            max-height: 40px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .empty-gallery {
+            text-align: center;
+            padding: 60px 20px;
+            color: #00aa00;
+        }
+        
+        .empty-gallery-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        
+        /* Notification */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 255, 0, 0.95);
+            color: #000;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.8);
+            font-weight: bold;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #0a0a0a;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 5px;
+        }
+        
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .app-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 400px;
+            }
+            
+            .title-overlay h1 {
+                font-size: 1.8em;
+            }
+            
+            .control-btn {
+                padding: 12px 20px;
+                font-size: 14px;
+                min-width: 100px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .title-overlay h1 {
+                font-size: 1.5em;
+            }
+            
+            .title-overlay p {
+                font-size: 0.85em;
+            }
+            
+            .video-controls {
+                gap: 10px;
+            }
+            
+            .control-btn {
+                padding: 10px 15px;
+                font-size: 13px;
+                min-width: 90px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Player Section (Left) -->
+        <div class="player-section">
+            <div class="neural-canvas-container">
+                <canvas id="bgCanvas" width="1920" height="1080"></canvas>
+                <canvas id="compositeCanvas" width="1920" height="1080"></canvas>
+                <video id="videoPlayer" crossorigin="anonymous"></video>
+            </div>
+            
+            <div class="title-overlay">
+                <h1></h1>
+                <p></p>
+            </div>
+            
+            <div class="video-controls">
+                <button class="control-btn" id="playVideoBtn" disabled>▶️ Play</button>
+                <button class="control-btn" id="pauseVideoBtn" disabled>⏸️ Pause</button>
+            </div>
+        </div>
+        
+        <!-- Gallery Section (Right) -->
+        <div class="gallery-section">
+            <div class="gallery-header">
+                <h2>📹 AI Report News</h2>
+                <button class="refresh-btn" onclick="loadGallery()">🔄</button>
+            </div>
+            <div class="gallery-grid" id="galleryGrid">
+                <div class="empty-gallery">
+                    <div class="empty-gallery-icon">⏳</div>
+                    <p>Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Notification -->
+    <div class="notification" id="notification">
+        ✅ Video loaded!
+    </div>
+
+    <script>
+        // API Configuration
+        const API_URL = 'http://10.147.19.244:4188';
+        
+        // Canvas Setup
+        const bgCanvas = document.getElementById('bgCanvas');
+        const bgCtx = bgCanvas.getContext('2d');
+        const compositeCanvas = document.getElementById('compositeCanvas');
+        const compositeCtx = compositeCanvas.getContext('2d');
+        const video = document.getElementById('videoPlayer');
+        
+        // State
+        let isVideoLoaded = false;
+        let isPlaying = false;
+        let chromaEnabled = true;
+        let sensitivity = 40;
+        let smoothness = 15;
+        
+        // Gallery - เปลี่ยนจาก localStorage เป็นโหลดจาก Server
+        let videoHistory = [];
+        
+        // Canvas dimensions
+        const CANVAS_WIDTH = 1920;
+        const CANVAS_HEIGHT = 1080;
+        
+        // Neural Network
+        const layerColors = ['#00CCFF', '#9933FF', '#CC33FF', '#FF6600'];
+        let neuralNodes = [];
+        let neuralConnections = [];
+        let signals = [];
+        
+        class NeuralNode {
+            constructor(x, y, layer) {
+                this.x = x;
+                this.y = y;
+                this.layer = layer;
+                this.color = layerColors[layer];
+                this.radius = 5;
+                this.pulsePhase = Math.random() * Math.PI * 2;
+                this.pulseSpeed = 0.02 + Math.random() * 0.03;
+            }
+            
+            draw(ctx) {
+                const pulse = Math.sin(this.pulsePhase) * 0.5 + 0.5;
+                const alpha = 0.3 + pulse * 0.4;
+                const radius = this.radius + pulse * 2;
+                
+                const r = parseInt(this.color.slice(1, 3), 16);
+                const g = parseInt(this.color.slice(3, 5), 16);
+                const b = parseInt(this.color.slice(5, 7), 16);
+                
+                const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius * 3);
+                gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`);
+                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, radius * 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                this.pulsePhase += this.pulseSpeed;
+            }
+        }
+        
+        class Signal {
+            constructor(from, to) {
+                this.from = from;
+                this.to = to;
+                this.progress = 0;
+                this.speed = 0.01 + Math.random() * 0.02;
+                this.x = from.x;
+                this.y = from.y;
+            }
+            
+            update() {
+                this.progress += this.speed;
+                if (this.progress >= 1) this.progress = 0;
+                this.x = this.from.x + (this.to.x - this.from.x) * this.progress;
+                this.y = this.from.y + (this.to.y - this.from.y) * this.progress;
+            }
+            
+            draw(ctx) {
+                const alpha = Math.sin(this.progress * Math.PI);
+                const r = parseInt(this.to.color.slice(1, 3), 16);
+                const g = parseInt(this.to.color.slice(3, 5), 16);
+                const b = parseInt(this.to.color.slice(5, 7), 16);
+                
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.8})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+                
+                const gradient = ctx.createLinearGradient(this.from.x, this.from.y, this.x, this.y);
+                const r1 = parseInt(this.from.color.slice(1, 3), 16);
+                const g1 = parseInt(this.from.color.slice(3, 5), 16);
+                const b1 = parseInt(this.from.color.slice(5, 7), 16);
+                gradient.addColorStop(0, `rgba(${r1}, ${g1}, ${b1}, ${alpha * 0.2})`);
+                gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, ${alpha * 0.3})`);
+                
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(this.from.x, this.from.y);
+                ctx.lineTo(this.x, this.y);
+                ctx.stroke();
+            }
+        }
+        
+        function initNeuralNetwork() {
+            neuralNodes = [];
+            neuralConnections = [];
+            signals = [];
+            
+            const nodesPerLayer = [6, 8, 8, 6];
+            const leftLayers = 2;
+            const leftSpacing = (CANVAS_WIDTH * 0.25) / (leftLayers + 1);
+            
+            for (let layer = 0; layer < leftLayers; layer++) {
+                const nodeCount = nodesPerLayer[layer];
+                const x = leftSpacing * (layer + 1);
+                const verticalSpacing = CANVAS_HEIGHT / (nodeCount + 1);
+                
+                for (let i = 0; i < nodeCount; i++) {
+                    const y = verticalSpacing * (i + 1);
+                    neuralNodes.push(new NeuralNode(x, y, layer));
+                }
+            }
+            
+            const rightLayers = 2;
+            const rightStart = CANVAS_WIDTH * 0.75;
+            const rightSpacing = (CANVAS_WIDTH * 0.25) / (rightLayers + 1);
+            let leftNodeCount = nodesPerLayer[0] + nodesPerLayer[1];
+            
+            for (let layer = 0; layer < rightLayers; layer++) {
+                const nodeCount = nodesPerLayer[layer + 2];
+                const x = rightStart + rightSpacing * (layer + 1);
+                const verticalSpacing = CANVAS_HEIGHT / (nodeCount + 1);
+                
+                for (let i = 0; i < nodeCount; i++) {
+                    const y = verticalSpacing * (i + 1);
+                    neuralNodes.push(new NeuralNode(x, y, layer + 2));
+                }
+            }
+            
+            // Connections
+            for (let i = 0; i < nodesPerLayer[0]; i++) {
+                const fromNode = neuralNodes[i];
+                for (let j = 0; j < nodesPerLayer[1]; j++) {
+                    const toNode = neuralNodes[nodesPerLayer[0] + j];
+                    if (Math.random() > 0.3) {
+                        neuralConnections.push({ from: fromNode, to: toNode });
+                    }
+                }
+            }
+            
+            const rightStartIdx = leftNodeCount;
+            for (let i = 0; i < nodesPerLayer[2]; i++) {
+                const fromNode = neuralNodes[rightStartIdx + i];
+                for (let j = 0; j < nodesPerLayer[3]; j++) {
+                    const toNode = neuralNodes[rightStartIdx + nodesPerLayer[2] + j];
+                    if (Math.random() > 0.3) {
+                        neuralConnections.push({ from: fromNode, to: toNode });
+                    }
+                }
+            }
+            
+            const leftLastLayerStart = nodesPerLayer[0];
+            const rightFirstLayerStart = leftNodeCount;
+            for (let i = 0; i < nodesPerLayer[1]; i++) {
+                const fromNode = neuralNodes[leftLastLayerStart + i];
+                const connectCount = 1 + Math.floor(Math.random() * 2);
+                for (let j = 0; j < connectCount; j++) {
+                    const toIdx = rightFirstLayerStart + Math.floor(Math.random() * nodesPerLayer[2]);
+                    const toNode = neuralNodes[toIdx];
+                    neuralConnections.push({ from: fromNode, to: toNode });
+                }
+            }
+            
+            for (let i = 0; i < 15; i++) {
+                const conn = neuralConnections[Math.floor(Math.random() * neuralConnections.length)];
+                signals.push(new Signal(conn.from, conn.to));
+            }
+        }
+        
+        function drawNeuralNetwork() {
+            bgCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            bgCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            bgCtx.lineWidth = 1;
+            for (const conn of neuralConnections) {
+                const gradient = bgCtx.createLinearGradient(
+                    conn.from.x, conn.from.y, 
+                    conn.to.x, conn.to.y
+                );
+                
+                const r1 = parseInt(conn.from.color.slice(1, 3), 16);
+                const g1 = parseInt(conn.from.color.slice(3, 5), 16);
+                const b1 = parseInt(conn.from.color.slice(5, 7), 16);
+                const r2 = parseInt(conn.to.color.slice(1, 3), 16);
+                const g2 = parseInt(conn.to.color.slice(3, 5), 16);
+                const b2 = parseInt(conn.to.color.slice(5, 7), 16);
+                
+                gradient.addColorStop(0, `rgba(${r1}, ${g1}, ${b1}, 0.08)`);
+                gradient.addColorStop(1, `rgba(${r2}, ${g2}, ${b2}, 0.08)`);
+                
+                bgCtx.strokeStyle = gradient;
+                bgCtx.beginPath();
+                bgCtx.moveTo(conn.from.x, conn.from.y);
+                bgCtx.lineTo(conn.to.x, conn.to.y);
+                bgCtx.stroke();
+            }
+            
+            for (let i = signals.length - 1; i >= 0; i--) {
+                const signal = signals[i];
+                signal.update();
+                signal.draw(bgCtx);
+                
+                if (signal.progress >= 0.98) {
+                    const conn = neuralConnections[Math.floor(Math.random() * neuralConnections.length)];
+                    signals[i] = new Signal(conn.from, conn.to);
+                }
+            }
+            
+            for (const node of neuralNodes) {
+                node.draw(bgCtx);
+            }
+        }
+        
+        // Chroma Key
+        function chromaKey(imageData) {
+            const data = imageData.data;
+            const threshold = sensitivity;
+            const width = imageData.width;
+            const height = imageData.height;
+            const alphaMap = new Uint8Array(width * height);
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const i = (y * width + x) * 4;
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    
+                    const distance = Math.sqrt(
+                        Math.pow(r - 0, 2) +
+                        Math.pow(g - 255, 2) +
+                        Math.pow(b - 0, 2)
+                    );
+                    const normalizedDistance = (distance / 441) * 100;
+                    const greenDominance = g - Math.max(r, b);
+                    const dominanceScore = (greenDominance / 255) * 100;
+                    const isGreen = normalizedDistance < threshold || dominanceScore > (100 - threshold);
+                    
+                    if (isGreen) {
+                        let alpha = normalizedDistance / threshold;
+                        if (smoothness > 0) {
+                            alpha = Math.pow(alpha, 1 + smoothness / 20);
+                        }
+                        if (alpha > 0.1) {
+                            const spillAmount = 1 - alpha;
+                            data[i + 1] = Math.max(0, g - spillAmount * 50);
+                        }
+                        alphaMap[y * width + x] = Math.floor(alpha * 255);
+                    } else {
+                        alphaMap[y * width + x] = 255;
+                    }
+                }
+            }
+            
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const i = (y * width + x) * 4;
+                    data[i + 3] = alphaMap[y * width + x];
+                }
+            }
+            
+            return imageData;
+        }
+        
+        function processVideoFrame() {
+            if (!isPlaying || !isVideoLoaded) return;
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = CANVAS_WIDTH;
+            tempCanvas.height = CANVAS_HEIGHT;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            const videoAspect = video.videoWidth / video.videoHeight;
+            const canvasAspect = CANVAS_WIDTH / CANVAS_HEIGHT;
+            
+            let drawWidth, drawHeight, offsetX, offsetY;
+            
+            if (videoAspect > canvasAspect) {
+                drawHeight = CANVAS_HEIGHT;
+                drawWidth = drawHeight * videoAspect;
+                offsetX = (CANVAS_WIDTH - drawWidth) / 2;
+                offsetY = 0;
+            } else {
+                drawWidth = CANVAS_WIDTH;
+                drawHeight = drawWidth / videoAspect;
+                offsetX = 0;
+                offsetY = (CANVAS_HEIGHT - drawHeight) / 2;
+            }
+            
+            tempCtx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+            const imageData = tempCtx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            if (chromaEnabled) {
+                chromaKey(imageData);
+            }
+            
+            compositeCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            compositeCtx.putImageData(imageData, 0, 0);
+        }
+        
+        function animate() {
+            drawNeuralNetwork();
+            processVideoFrame();
+            requestAnimationFrame(animate);
+        }
+        
+        initNeuralNetwork();
+        animate();
+        
+        // Gallery - โหลดจาก Server API
+        async function loadGallery() {
+            const grid = document.getElementById('galleryGrid');
+            
+            // Show loading
+            grid.innerHTML = `
+                <div class="empty-gallery">
+                    <div class="empty-gallery-icon">⏳</div>
+                    <p>Loading gallery...</p>
+                </div>
+            `;
+            
+            try {
+                // เรียก API เพื่อดึงรายการวิดีโอ
+                const response = await fetch(`${API_URL}/api/v1/jobs/list?limit=100`);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load gallery');
+                }
+                
+                const data = await response.json();
+                videoHistory = data.jobs || [];
+                
+                if (videoHistory.length === 0) {
+                    grid.innerHTML = `
+                        <div class="empty-gallery">
+                            <div class="empty-gallery-icon">🎬</div>
+                            <p>No videos in gallery</p>
+                            <p style="font-size: 12px; margin-top: 10px; opacity: 0.7;">
+                                Videos will appear here after generation
+                            </p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                grid.innerHTML = videoHistory.map((item, index) => `
+                    <div class="gallery-item" onclick="playGalleryVideo('${item.job_id}')">
+                        <video preload="metadata">
+                            <source src="${API_URL}/api/v1/jobs/${item.job_id}/result#t=0.5" type="video/mp4">
+                        </video>
+                        <div class="gallery-item-info">
+                            <div class="gallery-item-date">📅 ${new Date(item.created_at).toLocaleString('th-TH')}</div>
+                            <div class="gallery-item-text">${item.text}</div>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Failed to load gallery:', error);
+                grid.innerHTML = `
+                    <div class="empty-gallery">
+                        <div class="empty-gallery-icon">⚠️</div>
+                        <p style="color: #ff6600;">Failed to load gallery</p>
+                        <p style="font-size: 12px; margin-top: 10px; opacity: 0.7;">
+                            ${error.message}
+                        </p>
+                        <button class="refresh-btn" onclick="loadGallery()" style="margin-top: 15px;">
+                            🔄 Retry
+                        </button>
+                    </div>
+                `;
+            }
+        }
+        
+        function playGalleryVideo(job_id) {
+            const videoUrl = `${API_URL}/api/v1/jobs/${job_id}/result`;
+            video.src = videoUrl;
+            video.load();
+            video.addEventListener('loadedmetadata', () => {
+                isVideoLoaded = true;
+                playVideoBtn.disabled = false;
+                pauseVideoBtn.disabled = false;
+                video.play();
+                isPlaying = true;
+                showNotification('✅ Video loaded!');
+            });
+        }
+        
+        function showNotification(message) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.classList.add('show');
+            
+            if (navigator.vibrate) {
+                navigator.vibrate([200, 100, 200]);
+            }
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Controls
+        document.getElementById('playVideoBtn').addEventListener('click', () => {
+            if (isVideoLoaded) {
+                video.play();
+                isPlaying = true;
+            }
+        });
+        
+        document.getElementById('pauseVideoBtn').addEventListener('click', () => {
+            if (isVideoLoaded) {
+                video.pause();
+                isPlaying = false;
+            }
+        });
+        
+        video.addEventListener('play', () => {
+            isPlaying = true;
+        });
+        
+        video.addEventListener('pause', () => {
+            isPlaying = false;
+        });
+        
+        video.addEventListener('ended', () => {
+            isPlaying = false;
+        });
+        
+        // Initialize
+        loadGallery();
+        
+        // Auto-refresh gallery every 30 seconds from Server
+        setInterval(() => {
+            loadGallery();
+        }, 30000);
+    </script>
+</body>
+</html>
